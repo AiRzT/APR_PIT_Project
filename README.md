@@ -61,7 +61,7 @@ The code provides physics residuals, adaptive collocation, Adam–L-BFGS optimiz
 ## Project layout
 
 ```text
-ARP_PIT_Project/
+APR_PIT_Project/
 ├── README.md                   # English overview (default)
 ├── README.zh-CN.md              # Chinese overview
 ├── requirements.txt            # Python dependencies
@@ -89,8 +89,8 @@ A CUDA-enabled PyTorch installation is recommended for manuscript-scale training
 Clone the repository and enter its root directory:
 
 ```bash
-git clone https://github.com/AiRzT/ARP_PIT_Project.git
-cd ARP_PIT_Project
+git clone https://github.com/AiRzT/APR_PIT_Project.git
+cd APR_PIT_Project
 ```
 
 Create a dedicated Conda environment, for example:

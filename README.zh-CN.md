@@ -63,7 +63,7 @@ $$
 以下列出主要配置、脚本和源代码：
 
 ```text
-ARP_PIT_Project/
+APR_PIT_Project/
 ├── README.md                   # 英文主页（默认）
 ├── README.zh-CN.md              # 中文说明
 ├── requirements.txt            # Python 依赖
@@ -94,8 +94,8 @@ ARP_PIT_Project/
 ### 1. 获取代码
 
 ```bash
-git clone https://github.com/AiRzT/ARP_PIT_Project.git
-cd ARP_PIT_Project
+git clone https://github.com/AiRzT/APR_PIT_Project.git
+cd APR_PIT_Project
 ```
 
 以下命令均在仓库根目录执行。
