@@ -4,6 +4,8 @@
 
 This repository provides a runnable PyTorch implementation of **APR-PiT**, a residual-adaptive physics-informed Transformer for center-plane reconstruction of buoyancy-driven heat and smoke transport in tunnel fires.
 
+Large data files: [Download from Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing).
+
 The code is a clean-room implementation based on the equations, model components, and parameter settings described in the associated manuscript. It is intended to reproduce the algorithmic workflow and manuscript-scale configuration, but it is not a claim of byte-for-byte identity with any historical training code.
 
 ## Repository status
