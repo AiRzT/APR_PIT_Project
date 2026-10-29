@@ -6,8 +6,6 @@
 
 本研究使用的所有大型数据文件均存放于以下网盘：[Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing) | [百度网盘](https://pan.baidu.com/s/1mh7BpiarOyjJi_IX-wVYUw)（提取码：`d5ed`）。
 
-配套论文：*Physics-informed rapid reconstruction of heat and smoke transport for ventilation assessment in underground tunnel fires*。以下方法说明对应论文 R1 的第 2 节及表 5。
-
 ## 论文方法
 
 ### 重建任务与变量

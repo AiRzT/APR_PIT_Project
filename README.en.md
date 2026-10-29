@@ -6,8 +6,6 @@
 
 All large data files used in this study are stored in the following cloud drives: [Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing) | [Baidu Netdisk](https://pan.baidu.com/s/1mh7BpiarOyjJi_IX-wVYUw) (extraction code: `d5ed`).
 
-Associated paper: *Physics-informed rapid reconstruction of heat and smoke transport for ventilation assessment in underground tunnel fires*. The method description below follows Section 2 and Table 5 of the R1 manuscript.
-
 ## Method described in the paper
 
 ### Reconstruction task and variables
