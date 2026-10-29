@@ -1,0 +1,8 @@
+# Install from the repository root: python -m pip install -r requirements.txt
+# For CUDA, install the appropriate PyTorch build first.
+torch>=1.13
+numpy
+PyYAML
+matplotlib
+# Required by scripts/evaluate_3d.py for HDF5 export.
+h5py

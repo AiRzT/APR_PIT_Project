@@ -1,6 +1,6 @@
 # APR-PiT
 
-[简体中文](README.md) | English
+English | [简体中文](README.zh-CN.md)
 
 **APR-PiT** combines a physics-conditioned Transformer with residual-adaptive point refinement and pruning to reconstruct velocity, dynamic pressure, temperature, and smoke mass fraction on the longitudinal center plane of tunnel fires for ventilation assessment. This repository provides PyTorch code and workflows for training, prediction, and reference-field comparison.
 
@@ -62,6 +62,9 @@ The code provides physics residuals, adaptive collocation, Adam–L-BFGS optimiz
 
 ```text
 ARP_PIT_Project/
+├── README.md                   # English overview (default)
+├── README.zh-CN.md              # Chinese overview
+├── requirements.txt            # Python dependencies
 ├── configs/tunnel_2d.yaml       # default two-dimensional training configuration
 ├── configs/tunnel_3d.yaml       # three-dimensional configuration
 ├── scripts/train.py             # Adam -> APR -> L-BFGS training
@@ -83,6 +86,13 @@ ARP_PIT_Project/
 
 A CUDA-enabled PyTorch installation is recommended for manuscript-scale training. CPU execution is sufficient for the smoke test and unit tests.
 
+Clone the repository and enter its root directory:
+
+```bash
+git clone https://github.com/AiRzT/ARP_PIT_Project.git
+cd ARP_PIT_Project
+```
+
 Create a dedicated Conda environment, for example:
 
 ```bash
@@ -90,13 +100,15 @@ conda create -n apr-pit python=3.10 -y
 conda activate apr-pit
 ```
 
-Install the required packages:
+Install the required packages from the repository root:
 
 ```bash
-pip install torch numpy pyyaml matplotlib
+python -m pip install -r requirements.txt
 ```
 
-For GPU training, install a PyTorch build that matches your CUDA version. See the official PyTorch installation instructions for the appropriate command for your workstation.
+The requirements include `h5py` for HDF5 export in `scripts/evaluate_3d.py`.
+
+For GPU training, install a PyTorch build that matches your CUDA version before installing the remaining requirements. See the official PyTorch installation instructions for the appropriate command for your workstation.
 
 ## Quick verification
 
