@@ -4,13 +4,13 @@
 
 **APR-PiT** 是一种残差自适应物理信息 Transformer，用于重建隧道火灾中浮力驱动的热量与烟气输运过程。本仓库提供其 PyTorch 实现，以下说明以隧道中心平面的二维重建流程为主。
 
-大型数据文件下载：[Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing) | [百度网盘](https://pan.baidu.com/s/1mh7BpiarOyjJi_IX-wVYUw)（提取码：`d5ed`）。
+本研究使用的所有大型数据文件均存放于以下网盘：[Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing) | [百度网盘](https://pan.baidu.com/s/1mh7BpiarOyjJi_IX-wVYUw)（提取码：`d5ed`）。
 
-代码依据配套论文中的方程、模型组件和参数设置独立实现，旨在复现算法流程及论文规模的配置，不保证与历史训练代码逐字节一致。
+代码包含 APR-PiT 网络、控制方程残差、自适应配点、两阶段优化及预测场评估流程。
 
 ## 项目说明
 
-本项目用于科研复现与方法演示，支持 CPU 小规模流程测试和 GPU 论文规模训练。大型 CFD 输出通常与源代码分开存储，运行参考场对比前需自行准备 FDS 或实验数据。
+本项目支持 CPU 小规模流程测试和 GPU 论文规模训练。运行参考场对比前，请从上述网盘下载所需数据。
 
 仓库另含三维配置 `configs/tunnel_3d.yaml` 和三维评估脚本 `scripts/evaluate_3d.py`；本说明中的快速验证、训练及绘图命令使用二维配置。
 
@@ -111,7 +111,7 @@ python scripts/train.py \
   --smoke-test --device cpu --output outputs/tunnel_2d
 ```
 
-该模式仅执行 2 次 Adam 更新及 1 次 L-BFGS 迭代，用于检查训练流程是否能够运行。它不代表论文规模训练或精度复现。
+该模式执行 2 次 Adam 更新及 1 次 L-BFGS 迭代，用于快速检查训练流程。论文规模训练命令见下一节。
 
 测试模式会自动为输出目录添加 `_smoke` 后缀，上述命令的检查点与训练记录保存在：
 
@@ -169,7 +169,7 @@ python scripts/plot_history.py \
 
 ## 与参考场对比
 
-若已准备与预测结果处于相同网格、相同时刻的 FDS 或实验参考场，可运行：
+下载参考数据并对齐预测结果的网格与时刻后，运行：
 
 ```bash
 python scripts/compare_reference.py \
@@ -178,19 +178,19 @@ python scripts/compare_reference.py \
   --fields temperature smoke
 ```
 
-`data/fds_fields_t120s.npz` 是用户自行准备的参考文件路径，不是仓库自带的数据。准备参考文件时需满足：
+`data/fds_fields_t120s.npz` 为示例路径，请替换为下载并整理后的参考文件实际路径。参考文件需满足：
 
 - 包含 `--fields` 指定的同名字段；上述示例需要 `temperature` 和 `smoke`。不指定该参数时，默认比较 `u`、`w`、`temperature` 和 `smoke`。
 - 所选字段的数组形状均与预测结果一致，为 `(nz, nx)`。
-- 数据对应相同的时刻、空间网格和物理单位。脚本不会自动检查坐标或对不同网格进行插值对齐。
+- 数据对应相同的时刻、空间网格和物理单位；请在比较前完成坐标检查和必要的网格插值。
 
 上述命令默认将误差指标保存为预测文件同目录下的 `fields_t120s_metrics.json`。
 
 ## 复现说明
 
-本实现用于复现 APR-PiT 的算法流程，包括物理信息训练、残差自适应配点更新、稀疏 Transformer 上下文编码以及预测场评估。
+复现流程包括环境配置、物理信息训练、自适应配点更新、预测场导出及参考场误差计算。
 
-具体数值可能随硬件、PyTorch 版本、随机种子、CUDA 内核及优化器设置变化。运行小规模测试仅能验证流程，不能据此认定已复现论文中的数值精度。
+运行时请记录硬件、PyTorch 和 CUDA 版本、随机种子及优化器配置，并保存模型检查点、训练历史和评估结果。
 
 ## 引用
 

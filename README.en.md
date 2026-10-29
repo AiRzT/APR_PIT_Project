@@ -4,13 +4,13 @@
 
 This repository provides a runnable PyTorch implementation of **APR-PiT**, a residual-adaptive physics-informed Transformer for center-plane reconstruction of buoyancy-driven heat and smoke transport in tunnel fires.
 
-Large data files: [Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing) | [Baidu Netdisk](https://pan.baidu.com/s/1mh7BpiarOyjJi_IX-wVYUw) (extraction code: `d5ed`).
+All large data files used in this study are stored in the following cloud drives: [Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing) | [Baidu Netdisk](https://pan.baidu.com/s/1mh7BpiarOyjJi_IX-wVYUw) (extraction code: `d5ed`).
 
-The code is a clean-room implementation based on the equations, model components, and parameter settings described in the associated manuscript. It is intended to reproduce the algorithmic workflow and manuscript-scale configuration, but it is not a claim of byte-for-byte identity with any historical training code.
+The code includes the APR-PiT network, governing-equation residuals, adaptive collocation, two-stage optimization, and field evaluation.
 
 ## Repository status
 
-This repository is prepared for research reproducibility and method demonstration. The implementation supports CPU smoke tests and GPU manuscript-scale training. Reference FDS fields are not included unless explicitly provided by the user, because large CFD output files are usually stored separately from the source code.
+The implementation supports CPU smoke tests and GPU manuscript-scale training. Download the required data from the cloud drives above before running reference-field comparisons.
 
 ## Implemented method
 
@@ -75,7 +75,7 @@ From the repository root, run the unit tests:
 python -m unittest discover -s tests -v
 ```
 
-Run the complete algorithmic pipeline with tiny point counts and two Adam steps:
+Run a smoke test with small point counts, two Adam updates, and one L-BFGS iteration:
 
 ```bash
 MPLCONFIGDIR=/tmp/apr_pit_matplotlib \
@@ -125,7 +125,7 @@ python scripts/plot_history.py \
 
 ## Reference-field comparison
 
-If same-grid FDS or experimental reference fields are available, compare the exported prediction with a reference `.npz` file:
+After downloading the reference data and aligning its grid and time with the prediction, run:
 
 ```bash
 python scripts/compare_reference.py \
@@ -134,11 +134,13 @@ python scripts/compare_reference.py \
   --fields temperature smoke
 ```
 
-The reference `.npz` file should contain fields on the same grid as the exported prediction. Large FDS files are not included in this repository by default. Users should prepare same-grid reference files according to the expected field names used by `scripts/compare_reference.py`.
+`data/fds_fields_t120s.npz` is an example path; replace it with the actual path to the downloaded and prepared reference file. The reference `.npz` file must use the field names expected by `scripts/compare_reference.py` and match the prediction's array shapes, grid, time, and physical units. Check coordinates and perform any required grid interpolation before comparison.
 
 ## Notes on reproducibility
 
-This implementation is designed to reproduce the algorithmic workflow of APR-PiT, including physics-informed training, residual-adaptive collocation updates, sparse Transformer context encoding, and field-level evaluation. Exact numerical values may vary with hardware, PyTorch version, random seed, CUDA kernels, and optimizer settings.
+The reproduction workflow covers environment setup, physics-informed training, adaptive collocation updates, field export, and reference-field error calculation.
+
+Record the hardware, PyTorch and CUDA versions, random seed, and optimizer configuration for each run, and retain the model checkpoints, training history, and evaluation results.
 
 ## Citation
 
