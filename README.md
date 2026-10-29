@@ -4,7 +4,7 @@
 
 **APR-PiT** 是一种残差自适应物理信息 Transformer，用于重建隧道火灾中浮力驱动的热量与烟气输运过程。本仓库提供其 PyTorch 实现，以下说明以隧道中心平面的二维重建流程为主。
 
-大型数据文件下载：[Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing)。
+大型数据文件下载：[Google Drive](https://drive.google.com/drive/folders/1JGFw06BPNis-8mYIm7WMLB3A50Q7rRUH?usp=sharing) | [百度网盘](https://pan.baidu.com/s/1mh7BpiarOyjJi_IX-wVYUw)（提取码：`d5ed`）。
 
 代码依据配套论文中的方程、模型组件和参数设置独立实现，旨在复现算法流程及论文规模的配置，不保证与历史训练代码逐字节一致。
 
