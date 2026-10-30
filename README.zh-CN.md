@@ -232,4 +232,4 @@ python scripts/compare_reference.py \
 
 ## 许可证
 
-原英文 README 声明本项目采用 MIT 许可证，但当前仓库尚未包含独立的 `LICENSE` 文件。具体许可条款待维护者补充该文件后确认。
+本项目采用 MIT 许可证，详见 [LICENSE](LICENSE)。
