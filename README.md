@@ -68,7 +68,7 @@ This imposes the inlet velocity exactly. PDE and boundary derivatives are evalua
 
 Boundary samples exclude intersecting edges/corners and `t = 0`; initial-condition samples lie at `t = 0` in the spatial interior. A nonzero, uniform inlet and no-slip walls have incompatible values at their intersection, and a suddenly applied inlet differs from the initially stationary interior at the initial inlet edge. These intersection points are excluded from the loss sets. A direct prediction at an inlet intersection follows the inlet lifting. No time ramp or inlet-profile smoothing is introduced.
 
-Legacy checkpoints without `model.velocity_conditioning` retain their original coordinate inputs and load without a wind-speed override. To use `V*` and lifting, train a new conditioned model; changing an old checkpoint's configuration does not supply the missing learned input weights. An open-portal checkpoint cannot be switched to nonzero forced ventilation during evaluation.
+Legacy checkpoints without `model.velocity_conditioning` retain their original coordinate inputs and load without a wind-speed override. An open-portal checkpoint cannot be switched to nonzero forced ventilation during evaluation.
 
 The repository also contains `configs/tunnel_3d.yaml` and `scripts/evaluate_3d.py` for three-dimensional computational extensions. The paper's main neural reconstruction model is the two-dimensional center-plane model described above.
 
@@ -233,8 +233,6 @@ python scripts/compare_reference.py \
 ## Notes on reproducibility
 
 The reproduction workflow covers environment setup, physics-informed training, adaptive collocation updates, field export, and reference-field error calculation.
-
-The implemented velocity condition and inlet lifting close the corresponding code-interface gap. They do not by themselves establish reproduction of manuscript Tables 6–15 or accuracy at unseen velocities. Those results require the matching case definitions, reference data, trained checkpoints, and table-specific evaluations.
 
 Record the hardware, PyTorch and CUDA versions, random seed, and optimizer configuration for each run, and retain the model checkpoints, training history, and evaluation results.
 
