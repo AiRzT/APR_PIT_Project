@@ -1,10 +1,45 @@
 from __future__ import annotations
 
 import copy
+import math
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+def spatial_dimensions(config: dict[str, Any]) -> int:
+    """Separate physical dimensions from the optional case-level V* input."""
+    model = config["model"]
+    conditioned = bool(model.get("velocity_conditioning", False))
+    dimensions = int(model.get("spatial_dimensions", int(model["input_dim"]) - 1 - conditioned))
+    if dimensions not in (2, 3):
+        raise ValueError("model.spatial_dimensions must be 2 or 3")
+    return dimensions
+
+
+def resolve_inlet_velocity(config: dict[str, Any], override: float | None = None) -> float:
+    """Resolve one physical inlet speed (m/s) for a whole attention batch.
+
+    Legacy checkpoints keep their original unconditioned, zero-inlet behavior.
+    Changing wind speed requires a conditioned, prescribed-inlet checkpoint;
+    evaluation cannot silently change an open-portal boundary topology.
+    """
+    boundary = config.get("boundary", {})
+    mode = boundary.get("inlet_mode", "velocity")
+    if mode not in ("velocity", "open"):
+        raise ValueError("boundary.inlet_mode must be 'velocity' or 'open'")
+    conditioned = bool(config["model"].get("velocity_conditioning", False))
+    if override is not None and not conditioned:
+        raise ValueError("inlet_velocity override requires a velocity-conditioned checkpoint; retrain first")
+    value = float(boundary.get("inlet_velocity", 0.0) if override is None else override)
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError("inlet_velocity must be a finite, nonnegative speed in m/s")
+    if mode == "open" and value != 0.0:
+        raise ValueError("An open-portal checkpoint uses V*=0; train a velocity-inlet model first")
+    if not conditioned and value != 0.0:
+        raise ValueError("Nonzero inlet_velocity requires model.velocity_conditioning: true")
+    return value
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -22,21 +57,22 @@ def load_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("model.d_model must be divisible by model.attention_heads")
     if config["model"]["correction_heads"] > config["model"]["attention_heads"]:
         raise ValueError("correction_heads cannot exceed attention_heads")
-    spatial_dimensions = int(
-        config["model"].get("spatial_dimensions", int(config["model"]["input_dim"]) - 1)
-    )
+    dimensions = spatial_dimensions(config)
     expected = {2: (3, 5), 3: (4, 6)}
-    if spatial_dimensions not in expected:
-        raise ValueError("model.spatial_dimensions must be 2 or 3")
-    expected_input, expected_output = expected[spatial_dimensions]
+    expected_input, expected_output = expected[dimensions]
+    expected_input += bool(config["model"].get("velocity_conditioning", False))
     if int(config["model"]["input_dim"]) != expected_input:
         raise ValueError(
-            f"model.input_dim must be {expected_input} for {spatial_dimensions}D physics"
+            f"model.input_dim must be {expected_input} for {dimensions}D physics and its conditioning flag"
         )
     if int(config["model"]["output_dim"]) != expected_output:
         raise ValueError(
-            f"model.output_dim must be {expected_output} for {spatial_dimensions}D physics"
+            f"model.output_dim must be {expected_output} for {dimensions}D physics"
         )
+    velocity_scale = float(config["scales"]["velocity"])
+    if not math.isfinite(velocity_scale) or velocity_scale <= 0.0:
+        raise ValueError("scales.velocity must be finite and positive")
+    resolve_inlet_velocity(config)
     return config
 
 

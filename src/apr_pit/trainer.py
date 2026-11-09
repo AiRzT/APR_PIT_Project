@@ -11,7 +11,14 @@ from torch import nn
 from .config import save_config
 from .model import APRPiT
 from .physics import TunnelFirePhysics
-from .sampling import APRController, CollocationPool, sample_boundary, sample_initial, sample_interior
+from .sampling import (
+    APRController,
+    CollocationPool,
+    coordinate_dimensions,
+    sample_boundary,
+    sample_initial,
+    sample_interior,
+)
 from .utils import append_jsonl, trainable_parameter_count
 
 
@@ -28,7 +35,7 @@ class APRPiTTrainer:
         self.physics = TunnelFirePhysics(config)
         self.apr = APRController(config)
         sampling = config["sampling"]
-        dimensions = int(config["model"]["input_dim"])
+        dimensions = coordinate_dimensions(config)
         self.pool = CollocationPool.initialize(
             int(sampling["initial_interior"]), self.generator, dimensions
         )

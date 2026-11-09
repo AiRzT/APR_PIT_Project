@@ -15,6 +15,7 @@ import torch  # noqa: E402
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from apr_pit.config import resolve_inlet_velocity, spatial_dimensions  # noqa: E402
 from apr_pit.model import APRPiT  # noqa: E402
 from apr_pit.utils import choose_device  # noqa: E402
 
@@ -27,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nz", type=int, default=121)
     parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--inlet-velocity",
+        type=float,
+        default=None,
+        help="Evaluate at this inlet speed in m/s; requires a conditioned velocity-inlet checkpoint.",
+    )
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -39,7 +46,14 @@ def evaluate_grid(
     nz: int,
     batch_size: int,
     device: torch.device,
+    inlet_velocity: float | None = None,
 ) -> dict[str, np.ndarray]:
+    if spatial_dimensions(config) != 2:
+        raise ValueError("evaluate.py requires a 2D checkpoint; use evaluate_3d.py for 3D")
+    if nx < 2 or nz < 2 or batch_size < 1:
+        raise ValueError("nx and nz must be at least 2, and batch_size must be positive")
+    training_velocity = resolve_inlet_velocity(config)
+    evaluation_velocity = resolve_inlet_velocity(config, inlet_velocity)
     x = np.linspace(0.0, float(config["domain"]["length_x"]), nx)
     z = np.linspace(0.0, float(config["domain"]["height_z"]), nz)
     xx, zz = np.meshgrid(x, z)
@@ -58,11 +72,25 @@ def evaluate_grid(
             coordinates = torch.from_numpy(normalized[start : start + batch_size]).to(
                 device=device, dtype=torch.float32
             )
-            prediction = model(coordinates)
+            prediction = model(coordinates, inlet_velocity=inlet_velocity)
             for name in fields:
                 fields[name].append(prediction[name].cpu().numpy())
     result = {name: np.concatenate(values).reshape(nz, nx) for name, values in fields.items()}
     result.update({"x": x, "z": z})
+    velocity_scale = float(config["scales"]["velocity"])
+    result.update(
+        {
+            "time_s": np.asarray(time_seconds),
+            "training_inlet_velocity_m_s": np.asarray(training_velocity),
+            "evaluation_inlet_velocity_m_s": np.asarray(evaluation_velocity),
+            "training_v_star": np.asarray(training_velocity / velocity_scale),
+            "evaluation_v_star": np.asarray(evaluation_velocity / velocity_scale),
+            "inlet_mode": np.asarray(config.get("boundary", {}).get("inlet_mode", "velocity")),
+            "velocity_conditioning": np.asarray(
+                bool(config["model"].get("velocity_conditioning", False))
+            ),
+        }
+    )
     return result
 
 
@@ -91,13 +119,23 @@ def main() -> None:
     device = choose_device(args.device)
     checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
     config = checkpoint["config"]
+    if spatial_dimensions(config) != 2:
+        raise ValueError("evaluate.py requires a 2D checkpoint; use evaluate_3d.py for 3D")
+    if args.nx < 2 or args.nz < 2 or args.batch_size < 1:
+        raise ValueError("--nx and --nz must be at least 2, and --batch-size must be positive")
+    evaluation_velocity = resolve_inlet_velocity(config, args.inlet_velocity)
     model = APRPiT(config).to(device)
     model.load_state_dict(checkpoint["model"])
-    output = args.output or args.checkpoint.parent / "evaluation"
+    output_name = "evaluation"
+    if config["model"].get("velocity_conditioning", False):
+        speed_token = str(evaluation_velocity).replace(".", "p")
+        output_name += f"_v{speed_token}m_s"
+    output = args.output or args.checkpoint.parent / output_name
     output.mkdir(parents=True, exist_ok=True)
     for time_seconds in args.times:
         result = evaluate_grid(
-            model, config, time_seconds, args.nx, args.nz, args.batch_size, device
+            model, config, time_seconds, args.nx, args.nz, args.batch_size, device,
+            inlet_velocity=args.inlet_velocity,
         )
         stem = f"fields_t{time_seconds:g}s"
         np.savez_compressed(output / f"{stem}.npz", **result)

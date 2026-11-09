@@ -1,5 +1,9 @@
 seed: 2026
 
+boundary:
+  inlet_mode: open
+  inlet_velocity: 0.0  # m/s; train --inlet-velocity selects a prescribed inlet
+
 domain:
   length_x: 200.0
   width_y: 10.0
@@ -40,7 +44,8 @@ source:
 
 model:
   spatial_dimensions: 2
-  input_dim: 3
+  velocity_conditioning: true
+  input_dim: 4  # t*, x*, z*, V*; samplers still draw three coordinates
   output_dim: 5
   transformer_layers: 4
   d_model: 256

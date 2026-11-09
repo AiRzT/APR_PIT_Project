@@ -5,6 +5,8 @@ from typing import Any
 
 import torch
 
+from .config import resolve_inlet_velocity, spatial_dimensions
+
 
 def _gradient(field: torch.Tensor, coordinates: torch.Tensor) -> torch.Tensor:
     return torch.autograd.grad(
@@ -30,9 +32,10 @@ class TunnelFirePhysics:
         self.scales = config["scales"]
         self.constants = config["physics"]
         self.source_config = config["source"]
-        self.spatial_dimensions = int(
-            config["model"].get("spatial_dimensions", int(config["model"]["input_dim"]) - 1)
-        )
+        self.config = config
+        self.inlet_mode = config.get("boundary", {}).get("inlet_mode", "velocity")
+        resolve_inlet_velocity(config)
+        self.spatial_dimensions = spatial_dimensions(config)
         if self.spatial_dimensions not in (2, 3):
             raise ValueError("Only two- and three-dimensional physics are supported")
         self._source_normalizer = self._gaussian_domain_probability()
@@ -97,6 +100,8 @@ class TunnelFirePhysics:
     ) -> dict[str, torch.Tensor]:
         if not coordinates.requires_grad:
             raise ValueError("coordinates must require gradients for PDE residual evaluation")
+        if coordinates.ndim != 2 or coordinates.shape[1] != self.spatial_dimensions + 1:
+            raise ValueError("PDE coordinates must contain only time and physical space, not V*")
 
         duration = float(self.domain["duration"])
         lengths = self.spatial_lengths
@@ -317,6 +322,8 @@ class TunnelFirePhysics:
         prediction: dict[str, torch.Tensor],
         coordinates: torch.Tensor,
         boundary_type: torch.Tensor,
+        *,
+        inlet_velocity: float | None = None,
     ) -> torch.Tensor:
         lengths = self.spatial_lengths
         velocity_scale = float(self.scales["velocity"])
@@ -336,14 +343,22 @@ class TunnelFirePhysics:
         inlet = boundary_type == 0
         outlet = boundary_type == 1
         wall = boundary_type >= 2
-        inlet_loss = sum(
-            _mean_square(component[inlet] / velocity_scale) for component in velocity
-        )
-        inlet_loss = (
-            inlet_loss
-            + _mean_square((temperature[inlet] - ambient) / temperature_scale)
-            + _mean_square(smoke[inlet] / smoke_scale)
-        )
+        speed = resolve_inlet_velocity(self.config, inlet_velocity)
+        if self.inlet_mode == "open":
+            # Both portals use the same open-boundary operator. Neither is
+            # constrained to zero velocity or given an inlet lifting.
+            outlet = outlet | inlet
+            inlet_loss = pressure.new_zeros(())
+        else:
+            inlet_loss = sum(
+                _mean_square((component[inlet] - (speed if axis == 0 else 0.0)) / velocity_scale)
+                for axis, component in enumerate(velocity)
+            )
+            inlet_loss = (
+                inlet_loss
+                + _mean_square((temperature[inlet] - ambient) / temperature_scale)
+                + _mean_square(smoke[inlet] / smoke_scale)
+            )
         outlet_loss = _mean_square(pressure[outlet] / pressure_scale)
         outlet_loss = outlet_loss + sum(
             _mean_square(gradient[outlet, 1:2] / velocity_scale)

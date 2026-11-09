@@ -52,7 +52,23 @@ $$
 
 ## 当前代码入口
 
-本说明中的运行命令使用 `configs/tunnel_2d.yaml`：当前二维接口接收无量纲坐标 `(t, x, z)`，输出 `(u, w, pi, T, C_s)`；入口边界通过零速度残差约束。论文中的 `V*` 条件输入及速度边界提升尚未接入该默认脚本。
+本说明中的运行命令使用 `configs/tunnel_2d.yaml`。模型接收归一化时空坐标 `(t, x, z)`，通过 `model(coordinates, inlet_velocity=V)` 接收入口风速，单位为 m/s；内部追加常量条件 `V* = V / scales.velocity`，输出有量纲的 `(u, w, pi, T, C_s)` 场。训练、PDE 残差、自适应采样及预测使用同一接口。`V*` 不作为额外空间轴：自动微分、注意力几何与配点仍只使用原时空维度。
+
+随附配置启用 `model.velocity_conditioning: true`；二维和三维的 `model.input_dim` 分别为 4、5，而输入坐标张量仍为 `N × 3`、`N × 4`。两份配置默认设置 `boundary.inlet_mode: open`、`boundary.inlet_velocity: 0.0`。将 `inlet_mode` 设为 `velocity` 并指定非负的有量纲风速，或使用训练参数 `--inlet-velocity`，即可按给定入口速度训练。
+
+给定速度入口使用归一化纵向坐标 `xi = x / length_x`，对解码后的有量纲速度施加提升：
+
+$$
+\hat u=V+\xi\,\tilde u_\theta,\qquad
+\hat w=\xi\,\tilde w_\theta
+\quad (\hat v=\xi\,\tilde v_\theta\text{ in 3D}).
+$$
+
+该构造严格满足入口速度。PDE 与边界导数对提升后的最终场计算，包含 `xi` 的导数；入口损失使用相同的指定风速，不再将该入口速度罚向零。开放模式在两端采用压力和法向梯度开放边界算子，不启用速度提升；固壁无滑移约束单独处理。
+
+边界点不包含相交边/角点及 `t = 0`；初始条件点位于 `t = 0` 的空间内部。非零均匀入口与无滑移壁面在交界处取值不兼容，瞬时施加的入口与内部静止初值在初始入口边界也不兼容，因此损失点集排除这些交界点。若直接查询入口交界处，模型按入口提升返回速度。本实现不引入时间渐增函数或入口剖面平滑。
+
+不含 `model.velocity_conditioning` 的旧检查点保留原时空输入，未指定风速覆盖时可继续加载预测。使用 `V*` 与入口提升需要重新训练条件化模型；仅修改旧检查点配置不能补出新增输入对应的已学习权重。开放端口检查点不能在评估时直接切换为非零强制通风。
 
 仓库另含三维配置 `configs/tunnel_3d.yaml` 和评估脚本 `scripts/evaluate_3d.py`，用于三维计算扩展；论文的主要神经重建模型为上述二维中心平面模型。
 
@@ -84,7 +100,7 @@ APR_PIT_Project/
 │   ├── config.py                # 配置读取
 │   ├── metrics.py               # 误差指标
 │   └── utils.py                 # 通用工具
-└── tests/test_core.py           # 核心单元测试
+└── tests/                      # 核心物理与风速条件化测试
 ```
 
 ## 环境配置
@@ -188,10 +204,23 @@ python scripts/train.py \
 MPLCONFIGDIR=/tmp/apr_pit_matplotlib \
 python scripts/evaluate.py \
   outputs/tunnel_2d_full/checkpoint_final.pt \
-  --times 10 60 120 --device cuda
+  --times 10 60 120 --device cuda --output outputs/tunnel_2d_full/evaluation
 ```
 
-对每个指定时刻，脚本导出压缩的 `.npz` 场数据，以及包含速度大小、温度和烟气质量分数的白底 PNG 图像。默认结果保存在检查点所在目录下的 `evaluation/` 子目录。
+对每个指定时刻，脚本导出压缩的 `.npz` 场数据，以及包含速度大小、温度和烟气质量分数的白底 PNG 图像。上述命令通过 `--output` 将结果保存在检查点所在目录下的 `evaluation/` 子目录；省略该参数时，条件化模型的输出目录名包含评估风速。
+
+### 给定入口训练与固定权重预测
+
+在 `0.65 m/s` 训练一个条件化模型，再用同一检查点评估 `0.30 m/s`：
+
+```bash
+python scripts/train.py --config configs/tunnel_2d.yaml --inlet-velocity 0.65 --device cuda --output outputs/inlet_v065
+python scripts/evaluate.py outputs/inlet_v065/checkpoint_final.pt --inlet-velocity 0.30 --times 120 --device cuda --output outputs/inlet_v065/evaluation_v030
+```
+
+如需先在 CPU 检查流程，训练时将 `--device cuda` 换为 `--smoke-test --device cpu`，随后使用 `outputs/inlet_v065_smoke/checkpoint_final.pt`，并给评估命令设置 `--device cpu --nx 9 --nz 5`。小规模流程测试验证能否运行，不代表预测精度。
+
+评估时覆盖风速会同时改变内部条件与入口提升，不调用优化器，也不修改检查点权重；省略覆盖参数时使用检查点保存的训练风速。使用 `configs/tunnel_3d.yaml` 训练的三维模型，可通过 `scripts/evaluate_3d.py` 的同名参数评估。导出结果记录 `training_inlet_velocity_m_s`、`evaluation_inlet_velocity_m_s`、`training_v_star`、`evaluation_v_star` 和 `inlet_mode`，二维存为 NPZ 字段，三维存为 HDF5 属性。
 
 ### 绘制训练历史
 
@@ -223,6 +252,8 @@ python scripts/compare_reference.py \
 ## 复现说明
 
 复现流程包括环境配置、物理信息训练、自适应配点更新、预测场导出及参考场误差计算。
+
+本次接通了风速条件与入口提升对应的代码接口；仅完成这两项不代表已复现论文表 6–15，也不能据此认定未训练风速下的精度。相应结果仍需匹配的工况定义、参考数据、训练检查点及逐表评价。
 
 运行时请记录硬件、PyTorch 和 CUDA 版本、随机种子及优化器配置，并保存模型检查点、训练历史和评估结果。
 

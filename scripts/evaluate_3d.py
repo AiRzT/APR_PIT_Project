@@ -20,6 +20,7 @@ import torch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from apr_pit.config import resolve_inlet_velocity, spatial_dimensions  # noqa: E402
 from apr_pit.model import APRPiT  # noqa: E402
 from apr_pit.physics import TunnelFirePhysics  # noqa: E402
 from apr_pit.utils import choose_device  # noqa: E402
@@ -34,6 +35,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nz", type=int, default=49)
     parser.add_argument("--batch-size", type=int, default=4096)
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--inlet-velocity",
+        type=float,
+        default=None,
+        help="Evaluate at this inlet speed in m/s; requires a conditioned velocity-inlet checkpoint.",
+    )
     parser.add_argument("--output", type=Path, default=None)
     return parser.parse_args()
 
@@ -43,14 +50,22 @@ def main() -> None:
     device = choose_device(args.device)
     checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
     config = checkpoint["config"]
-    if int(config["model"].get("spatial_dimensions", 2)) != 3:
+    if spatial_dimensions(config) != 3:
         raise ValueError("evaluate_3d.py requires a checkpoint trained with spatial_dimensions: 3")
+    if min(args.nx, args.ny, args.nz) < 2 or args.batch_size < 1:
+        raise ValueError("--nx, --ny and --nz must be at least 2, and --batch-size must be positive")
+    training_velocity = resolve_inlet_velocity(config)
+    evaluation_velocity = resolve_inlet_velocity(config, args.inlet_velocity)
     model = APRPiT(config).to(device)
     model.load_state_dict(checkpoint["model"])
     model.eval()
     physics = TunnelFirePhysics(config)
 
-    output = args.output or args.checkpoint.parent / "evaluation_3d.h5"
+    output_name = "evaluation_3d"
+    if config["model"].get("velocity_conditioning", False):
+        speed_token = str(evaluation_velocity).replace(".", "p")
+        output_name += f"_v{speed_token}m_s"
+    output = args.output or args.checkpoint.parent / f"{output_name}.h5"
     output.parent.mkdir(parents=True, exist_ok=True)
     length_x = float(config["domain"]["length_x"])
     width_y = float(config["domain"]["width_y"])
@@ -67,6 +82,13 @@ def main() -> None:
     with h5py.File(output, "w") as h5:
         h5.attrs["model"] = "APR-PiT fully three-dimensional"
         h5.attrs["coordinate_order"] = "x,y,z"
+        velocity_scale = float(config["scales"]["velocity"])
+        h5.attrs["training_inlet_velocity_m_s"] = training_velocity
+        h5.attrs["evaluation_inlet_velocity_m_s"] = evaluation_velocity
+        h5.attrs["training_v_star"] = training_velocity / velocity_scale
+        h5.attrs["evaluation_v_star"] = evaluation_velocity / velocity_scale
+        h5.attrs["inlet_mode"] = config.get("boundary", {}).get("inlet_mode", "velocity")
+        h5.attrs["velocity_conditioning"] = bool(config["model"].get("velocity_conditioning", False))
         h5.attrs["hr_note"] = (
             "prescribed_heat_source_W_m3 is the PDE source, not a learned HRRPUV output"
         )
@@ -122,7 +144,7 @@ def main() -> None:
                         batch = torch.from_numpy(
                             normalized[batch_start : batch_start + args.batch_size]
                         ).to(device=device, dtype=torch.float32)
-                        prediction = model(batch)
+                        prediction = model(batch, inlet_velocity=args.inlet_velocity)
                         for name in model.field_names:
                             output_parts[name].append(prediction[name].cpu().numpy())
                         source_parts.append(physics.heat_source(batch).cpu().numpy())

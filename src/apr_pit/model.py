@@ -6,6 +6,8 @@ from typing import Any
 import torch
 from torch import nn
 
+from .config import resolve_inlet_velocity, spatial_dimensions
+
 
 class FourierEncoding(nn.Module):
     def __init__(self, input_dim: int, frequencies: int, sigma: float, seed: int) -> None:
@@ -185,10 +187,15 @@ class APRPiT(nn.Module):
         model = config["model"]
         self.scales = config["scales"]
         self.physics = config["physics"]
+        self.config = config
+        self.velocity_conditioning = bool(model.get("velocity_conditioning", False))
+        self.inlet_mode = config.get("boundary", {}).get("inlet_mode", "velocity")
+        resolve_inlet_velocity(config)
         input_dim = int(model["input_dim"])
         output_dim = int(model["output_dim"])
         d_model = int(model["d_model"])
-        self.spatial_dimensions = int(model.get("spatial_dimensions", input_dim - 1))
+        self.spatial_dimensions = spatial_dimensions(config)
+        self.coordinate_dimensions = self.spatial_dimensions + 1
         if self.spatial_dimensions == 2:
             self.field_names = ("u", "w", "pressure", "temperature", "smoke")
             expected_output_dim = 5
@@ -197,8 +204,8 @@ class APRPiT(nn.Module):
             expected_output_dim = 6
         else:
             raise ValueError("model.spatial_dimensions must be 2 or 3")
-        if input_dim != self.spatial_dimensions + 1:
-            raise ValueError("model.input_dim must equal spatial_dimensions + 1 for time")
+        if input_dim != self.coordinate_dimensions + self.velocity_conditioning:
+            raise ValueError("model.input_dim must equal space + time + optional V* conditioning")
         if output_dim != expected_output_dim:
             raise ValueError(
                 f"model.output_dim must be {expected_output_dim} for "
@@ -239,26 +246,41 @@ class APRPiT(nn.Module):
         coordinates: torch.Tensor,
         residual_hint: torch.Tensor | None = None,
         physics_features: torch.Tensor | None = None,
+        *,
+        inlet_velocity: float | None = None,
     ) -> dict[str, torch.Tensor]:
+        """Evaluate the final physical field for one wind speed.
+
+        ``coordinates`` contains only normalized time and space. V* is appended
+        internally as a constant condition, never as a PDE coordinate or an
+        attention distance. The physical inlet speed is supplied in m/s.
+        """
+        if coordinates.ndim != 2 or coordinates.shape[1] != self.coordinate_dimensions:
+            raise ValueError(f"coordinates must contain {self.coordinate_dimensions} time/space columns only")
+        speed = resolve_inlet_velocity(self.config, inlet_velocity)
+        velocity_ref = float(self.scales["velocity"])
         n = coordinates.shape[0]
         if residual_hint is None:
             residual_hint = coordinates.new_zeros(n, 1)
         if physics_features is None:
             physics_features = coordinates.new_zeros(n, 3)
 
-        tokens = self.point_embedding(coordinates) + self.position_embedding(self.fourier(coordinates))
+        inputs = coordinates
+        if self.velocity_conditioning:
+            condition = coordinates.new_full((n, 1), speed / velocity_ref)
+            inputs = torch.cat((coordinates, condition), dim=-1)
+        tokens = self.point_embedding(inputs) + self.position_embedding(self.fourier(inputs))
         for block in self.blocks:
             tokens = block(tokens, coordinates, residual_hint)
 
-        modulation = self.modulation(torch.cat((coordinates, physics_features), dim=-1))
+        modulation = self.modulation(torch.cat((inputs, physics_features), dim=-1))
         raw_gamma, beta = modulation.chunk(2, dim=-1)
         gamma = 1.0 + torch.tanh(raw_gamma)
         context = gamma * tokens + beta
-        features = context + self.point_skip(coordinates)
+        features = context + self.point_skip(inputs)
         raw = self.decoder(features)
 
         rho_ref = float(self.physics["ambient_density"])
-        velocity_ref = float(self.scales["velocity"])
         temperature_ref = float(self.scales["temperature"])
         smoke_ref = float(self.scales["smoke"])
         ambient_temperature = float(self.physics["ambient_temperature"])
@@ -280,6 +302,14 @@ class APRPiT(nn.Module):
                 "temperature": ambient_temperature + raw[:, 4:5] * temperature_ref,
                 "smoke": raw[:, 5:6] * smoke_ref,
             }
+        if self.velocity_conditioning and self.inlet_mode == "velocity":
+            # u_B=(V,0[,0]), d_u=x/L. Keep this inside the autograd graph:
+            # PDE and outlet derivatives must include the product rule.
+            distance = coordinates[:, 1:2]
+            velocity_names = ("u", "w") if self.spatial_dimensions == 2 else ("u", "v", "w")
+            for name in velocity_names:
+                physical[name] = distance * physical[name]
+            physical["u"] = speed + physical["u"]
         physical.update(
             {
                 "auxiliary_physics": self.auxiliary_decoder(context),

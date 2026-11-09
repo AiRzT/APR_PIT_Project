@@ -6,6 +6,8 @@ from typing import Any
 
 import torch
 
+from .config import spatial_dimensions
+
 
 def latin_hypercube(n: int, dimensions: int, generator: torch.Generator) -> torch.Tensor:
     """Latin-hypercube samples in the normalized unit cube."""
@@ -16,11 +18,14 @@ def latin_hypercube(n: int, dimensions: int, generator: torch.Generator) -> torc
         permutation = torch.randperm(n, generator=generator)
         jitter = torch.rand(n, generator=generator)
         result[:, dimension] = (permutation.to(torch.float32) + jitter) / n
+    # Initial samples are strictly inside the domain. Boundary sampling below
+    # then fixes exactly one face, avoiding conflicting inlet/wall corners.
+    result.clamp_(torch.finfo(result.dtype).eps, 1.0 - torch.finfo(result.dtype).eps)
     return result
 
 
 def coordinate_dimensions(config: dict[str, Any]) -> int:
-    return int(config["model"]["input_dim"])
+    return spatial_dimensions(config) + 1
 
 
 def sample_interior(n: int, generator: torch.Generator, dimensions: int = 3) -> torch.Tensor:
@@ -165,7 +170,8 @@ class APRController:
             noise = torch.randn(
                 (added, pool.points.shape[1]), generator=generator
             ) * self.jitter_std
-            new_points = (pool.points[parent_index] + noise).clamp(0.0, 1.0)
+            epsilon = torch.finfo(pool.points.dtype).eps
+            new_points = (pool.points[parent_index] + noise).clamp(epsilon, 1.0 - epsilon)
             new_scores = pool.residual_scores[parent_index]
             new_features = pool.physics_features[parent_index]
             kept_points = torch.cat((kept_points, new_points), dim=0)

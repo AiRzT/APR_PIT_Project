@@ -8,7 +8,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from apr_pit.config import load_config, smoke_test_config  # noqa: E402
+from apr_pit.config import load_config, resolve_inlet_velocity, smoke_test_config  # noqa: E402
 from apr_pit.trainer import APRPiTTrainer  # noqa: E402
 from apr_pit.utils import choose_device, set_seed  # noqa: E402
 
@@ -29,6 +29,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--device", default="auto", help="auto, cpu, mps, cuda, or cuda:N")
     parser.add_argument(
+        "--inlet-velocity",
+        type=float,
+        default=None,
+        help="Train at this prescribed inlet speed in m/s (requires velocity_conditioning).",
+    )
+    parser.add_argument(
         "--smoke-test",
         action="store_true",
         help="Use a tiny two-step configuration to validate the complete pipeline.",
@@ -39,6 +45,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
+    if args.inlet_velocity is not None:
+        if not config["model"].get("velocity_conditioning", False):
+            raise ValueError("--inlet-velocity requires model.velocity_conditioning: true")
+        config.setdefault("boundary", {}).update(
+            {"inlet_mode": "velocity", "inlet_velocity": args.inlet_velocity}
+        )
+        resolve_inlet_velocity(config)
     if args.smoke_test:
         config = smoke_test_config(config)
         args.output = args.output.with_name(args.output.name + "_smoke")

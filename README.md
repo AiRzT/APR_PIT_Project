@@ -52,7 +52,23 @@ The paper studies three configurations: a single fire with open portals, dual fi
 
 ## Current code interface
 
-The commands below use `configs/tunnel_2d.yaml`. Its current two-dimensional interface takes dimensionless coordinates `(t, x, z)` and returns `(u, w, pi, T, C_s)`, with a zero-velocity residual penalty at the inlet. The paper's `V*` conditioning input and velocity boundary lifting are not yet connected to this default script.
+The commands below use `configs/tunnel_2d.yaml`. The model accepts normalized space–time coordinates `(t, x, z)` and a physical inlet speed in m/s through `model(coordinates, inlet_velocity=V)`. It internally appends the constant condition `V* = V / scales.velocity` and returns physical `(u, w, pi, T, C_s)` fields. Training, PDE residuals, adaptive sampling, and prediction share this interface. `V*` is not an additional spatial axis: automatic differentiation, attention geometry, and collocation points retain their original space–time dimensions.
+
+The supplied configurations enable `model.velocity_conditioning: true`; `model.input_dim` is 4 for 2D and 5 for 3D, while the coordinate tensor remains `N × 3` or `N × 4`. Both configurations default to `boundary.inlet_mode: open` and `boundary.inlet_velocity: 0.0`. Set `inlet_mode: velocity` with a nonnegative physical speed, or use the training option `--inlet-velocity`, to train with a prescribed upstream velocity.
+
+For a prescribed inlet, the decoded physical velocity is lifted using the normalized streamwise coordinate `xi = x / length_x`:
+
+$$
+\hat u=V+\xi\,\tilde u_\theta,\qquad
+\hat w=\xi\,\tilde w_\theta
+\quad (\hat v=\xi\,\tilde v_\theta\text{ in 3D}).
+$$
+
+This imposes the inlet velocity exactly. PDE and boundary derivatives are evaluated on the lifted fields, including derivatives of `xi`. The inlet loss uses the same requested speed; it no longer penalizes that inlet toward zero velocity. Open mode uses the open-boundary pressure/normal-gradient operator at both portals and does not apply velocity lifting. Solid-wall no-slip conditions remain separate.
+
+Boundary samples exclude intersecting edges/corners and `t = 0`; initial-condition samples lie at `t = 0` in the spatial interior. A nonzero, uniform inlet and no-slip walls have incompatible values at their intersection, and a suddenly applied inlet differs from the initially stationary interior at the initial inlet edge. These intersection points are excluded from the loss sets. A direct prediction at an inlet intersection follows the inlet lifting. No time ramp or inlet-profile smoothing is introduced.
+
+Legacy checkpoints without `model.velocity_conditioning` retain their original coordinate inputs and load without a wind-speed override. To use `V*` and lifting, train a new conditioned model; changing an old checkpoint's configuration does not supply the missing learned input weights. An open-portal checkpoint cannot be switched to nonzero forced ventilation during evaluation.
 
 The repository also contains `configs/tunnel_3d.yaml` and `scripts/evaluate_3d.py` for three-dimensional computational extensions. The paper's main neural reconstruction model is the two-dimensional center-plane model described above.
 
@@ -79,7 +95,7 @@ APR_PIT_Project/
 │   ├── trainer.py               # optimization and checkpoints
 │   ├── config.py
 │   └── utils.py
-└── tests/test_core.py
+└── tests/                      # core physics and velocity-conditioning tests
 ```
 
 ## Environment
@@ -173,10 +189,25 @@ Evaluate a trained checkpoint on a regular grid:
 MPLCONFIGDIR=/tmp/apr_pit_matplotlib \
 python scripts/evaluate.py \
   outputs/tunnel_2d_full/checkpoint_final.pt \
-  --times 10 60 120 --device cuda
+  --times 10 60 120 --device cuda --output outputs/tunnel_2d_full/evaluation
 ```
 
 For each requested time, the script exports a compressed `.npz` field file and a white-background PNG containing velocity magnitude, temperature, and smoke mass fraction.
+
+### Prescribed-inlet training and fixed-weight prediction
+
+Train one conditioned model at `0.65 m/s`, then evaluate the same checkpoint at `0.30 m/s`:
+
+```bash
+python scripts/train.py --config configs/tunnel_2d.yaml --inlet-velocity 0.65 --device cuda --output outputs/inlet_v065
+python scripts/evaluate.py outputs/inlet_v065/checkpoint_final.pt --inlet-velocity 0.30 --times 120 --device cuda --output outputs/inlet_v065/evaluation_v030
+```
+
+For a CPU workflow check, add `--smoke-test --device cpu` to training (replace `--device cuda`) and evaluate `outputs/inlet_v065_smoke/checkpoint_final.pt` with `--device cpu --nx 9 --nz 5`. Smoke tests check execution, not predictive accuracy.
+
+The evaluation override changes both the internal condition and the inlet lifting, without invoking an optimizer or changing checkpoint weights. Omitting the override uses the checkpoint's configured speed. The same option is available in `scripts/evaluate_3d.py` for a model trained with `configs/tunnel_3d.yaml`. Field exports record `training_inlet_velocity_m_s`, `evaluation_inlet_velocity_m_s`, `training_v_star`, `evaluation_v_star`, and `inlet_mode` (NPZ entries in 2D; HDF5 attributes in 3D).
+
+### Training-history plot
 
 Plot the training history:
 
@@ -202,6 +233,8 @@ python scripts/compare_reference.py \
 ## Notes on reproducibility
 
 The reproduction workflow covers environment setup, physics-informed training, adaptive collocation updates, field export, and reference-field error calculation.
+
+The implemented velocity condition and inlet lifting close the corresponding code-interface gap. They do not by themselves establish reproduction of manuscript Tables 6–15 or accuracy at unseen velocities. Those results require the matching case definitions, reference data, trained checkpoints, and table-specific evaluations.
 
 Record the hardware, PyTorch and CUDA versions, random seed, and optimizer configuration for each run, and retain the model checkpoints, training history, and evaluation results.
 
